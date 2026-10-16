@@ -1,0 +1,580 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Navigation</title>
+
+  <!-- Leaflet map styles -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f6fa;
+      color: #172033;
+    }
+
+    header {
+      background: #174c3c;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+
+    .panel {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 10px #0000000d;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin: 12px 0 6px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccd3dd;
+      border-radius: 7px;
+      font-size: 15px;
+    }
+
+    button {
+      border: none;
+      border-radius: 7px;
+      padding: 12px 16px;
+      margin: 12px 6px 0 0;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      background: #17694e;
+      color: white;
+    }
+
+    button.secondary {
+      background: #e6eee9;
+      color: #174c3c;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    #map {
+      width: 100%;
+      height: 440px;
+      border-radius: 12px;
+      z-index: 1;
+    }
+
+    #status {
+      margin-top: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .stat {
+      background: #edf5f0;
+      padding: 16px;
+      border-radius: 8px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 22px;
+      margin-top: 6px;
+    }
+
+    .hint {
+      color: #586575;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      color: #586575;
+      font-size: 12px;
+    }
+
+    @media (max-width: 600px) {
+      #map {
+        height: 350px;
+      }
+
+      .panel {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Simple Navigation</h1>
+    <p>Find a route from your starting point to your destination.</p>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h2>Plan your journey</h2>
+
+      <label for="mode">Travel Mode</label>
++     <select id="mode" onchange="onModeChanged()">
++      option value="walking" selected>Walking (Pedestrian & Sidewalks)</option>
++      <option value="driving">Driving (Vehicle)</option>
++     </select>
+
+      <label for="start">Starting point</label>
+      <input
+        id="start"
+        type="text"
+        placeholder="e.g. Universiti Malaya, Kuala Lumpur"
+      >
+
+      <label for="destination">Destination</label>
+      <input
+        id="destination"
+        type="text"
+        placeholder="e.g. KL Sentral, Kuala Lumpur"
+      >
+
+      <button id="routeBtn" type="button" onclick="findRoute()">
+        Find route
+      </button>
+
+      <button class="secondary" type="button" onclick="useMyLocation()">
+        Use my location
+      </button>
+      
+      <button class="accent" type="button" onclick="toggleVoiceAnnouncements()">
++       Toggle Voice Guidance: <span id="voiceStatus">ON</span>
++     </button>
+
+      <button class="secondary" type="button" onclick="clearRoute()">
+        Clear
+      </button>
+
+      <div id="status" role="status" aria-live="polite">
+        Enter your starting point and destination to begin.
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          Distance
+          <strong id="distance">—</strong>
+        </div>
+        <div class="stat">
+          Estimated duration
+          <strong id="duration">—</strong>
+        </div>
+
+        <div class="stat tactile-highlight">
++          Tactile Blind Paths Detected
++          <strong id="tactileCount">—</strong>
++       </div>
+      </div>
+
+
+      <p class="hint">
+        Estimates depend on the routing service and available road data.
+        This is a learning project, not an emergency navigation service.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Map</h2>
+      <div id="map"></div>
+
+      <button id="googleBtn" type="button"
+        class="secondary" onclick="openGoogleMaps()" disabled>
+        Open route in Google Maps
+      </button>
+    </section>
+  </main>
+
+  <footer>
+    Map data © OpenStreetMap contributors.
+    Routing by OSRM demo service.
+  </footer>
+
+  <!-- Leaflet map library -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // 1. Create the map, initially centered on Kuala Lumpur.
+    const map = L.map("map").setView([3.139, 101.6869], 12);
+
+    // 2. Add OpenStreetMap tiles and attribution.
+    L.tileLayer(
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">' +
+          'OpenStreetMap contributors</a>'
+      }
+    ).addTo(map);
+
+    // Store markers, route and locations.
+    let startMarker = null;
+    let destinationMarker = null;
+    let routeLine = null;
+    let startCoords = null;
+    let destinationCoords = null;
+
+    // Cache previously searched locations to reduce repeat requests.
+    const locationCache = new Map();
+
+    const statusBox = document.getElementById("status");
+    const routeButton = document.getElementById("routeBtn");
+
+    function announce(message) {
+      statusBox.textContent = message;
+
+      if (voiceGuidanceEnabled && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.rate = 1.0;
+        utterance.lang = "en-US";
+        window.speechSynthesis.speak(utterance);
+      }
+      if ("vibrate" in navigator) {
+        navigator.vibrate(60);
+      }
+    }
+
+    function toggleVoiceAnnouncements() {
+      voiceGuidanceEnabled = !voiceGuidanceEnabled;
+      document.getElementById("voiceStatus").textContent = voiceGuidanceEnabled ? "ON" : "OFF";
+      announce("Voice guidance is now " + (voiceGuidanceEnabled ? "enabled" : "disabled"));
+    }
+
+    function onModeChanged() {
+      const mode = document.getElementById("mode").value;
+      announce("Mode changed to " + mode);
+    }
+
+    function resetResults() {
+      document.getElementById("distance").textContent = "—";
+      document.getElementById("duration").textContent = "—";
+      document.getElementById("tactileCount").textContent = "—";
+      document.getElementById("googleBtn").disabled = true;
+
+      if (tactileLayer) {
+        map.removeLayer(tactileLayer);
+        tactileLayer = null;
+      } 
+    }
+
+
+    // 3. Convert a place name into latitude and longitude.
+    async function geocode(place) {
+      const key = place.trim().toLowerCase();
+
+      const coordinateMatch = place.match(
+        /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/
+      );
+
+      if (coordinateMatch) {
+      return {
+        lat: Number(coordinateMatch[1]),
+        lon: Number(coordinateMatch[2]),
+        name: place
+      };
+    }   
+      if (locationCache.has(key)) {
+        return locationCache.get(key);
+      }
+
+      // Respect the public Nominatim service's rate limit.
+      if (geocode.lastRequest) {
+        const wait = 1100 - (Date.now() - geocode.lastRequest);
+
+        if (wait > 0) {
+          await new Promise(resolve => setTimeout(resolve, wait));
+        }
+      }
+
+      geocode.lastRequest = Date.now();
+
+      const url =
+        "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" +
+        encodeURIComponent(place);
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(
+          "The location search service is unavailable. Please try again."
+        );
+      }
+
+      const results = await response.json();
+
+      if (results.length === 0) {
+        throw new Error(
+          'Location not found: "' + place +
+          '". Try adding the city or state.'
+        );
+      }
+
+      const result = {
+        lat: Number(results[0].lat),
+        lon: Number(results[0].lon),
+        name: results[0].display_name
+      };
+
+      locationCache.set(key, result);
+      return result;
+    }
+
+    // 4. Display the starting point and destination.
+    function displayLocations(start, destination) {
+      if (startMarker) map.removeLayer(startMarker);
+      if (destinationMarker) map.removeLayer(destinationMarker);
+
+      startMarker = L.marker([start.lat, start.lon])
+        .addTo(map)
+        .bindPopup("Starting point")
+        .openPopup();
+
+      destinationMarker = L.marker([
+        destination.lat,
+        destination.lon
+      ])
+        .addTo(map)
+        .bindPopup("Destination");
+
+      const bounds = L.latLngBounds(
+        [start.lat, start.lon],
+        [destination.lat, destination.lon]
+      );
+
+      map.fitBounds(bounds, { padding: [35, 35] });
+    }
+
+    // 5. Find a driving route using OSRM.
+    async function getRoute(start, destination, mode) {
+      const coordinates =
+        start.lon + "," + start.lat + ";" +
+        destination.lon + "," + destination.lat;
+
+      
+      const url =
+        "https://router.project-osrm.org/route/v1/driving/" +
+        coordinates +
+        "?overview=full&geometries=geojson&steps=true";
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(
+          "The routing service is unavailable. Please try again."
+        );
+      }
+
+      const data = await response.json();
+
+      if (data.code !== "Ok" || !data.routes.length) {
+        throw new Error("No driving route was found.");
+      }
+
+      return data.routes[0];
+    }
+
+    // 6. Main function: search for both places and draw the route.
+    async function findRoute() {
+      const startText = document.getElementById("start").value.trim();
+      const destinationText =
+        document.getElementById("destination").value.trim();
+
+      if (!startText || !destinationText) {
+        setStatus("Please enter both a starting point and a destination.");
+        return;
+      }
+
+      routeButton.disabled = true;
+      routeButton.textContent = "Finding route...";
+      resetResults();
+
+      try {
+        setStatus("Searching for the starting point...");
+        const start = await geocode(startText);
+
+        setStatus("Searching for the destination...");
+        const destination = await geocode(destinationText);
+
+        startCoords = start;
+        destinationCoords = destination;
+
+        displayLocations(start, destination);
+
+        setStatus("Calculating the driving route...");
+        const route = await getRoute(start, destination);
+
+        if (routeLine) map.removeLayer(routeLine);
+
+        routeLine = L.geoJSON(route.geometry, {
+          style: {
+            color: "#1769ff",
+            weight: 5,
+            opacity: 0.8
+          }
+        }).addTo(map);
+
+        map.fitBounds(routeLine.getBounds(), {
+          padding: [35, 35]
+        });
+
+        const km = route.distance / 1000;
+        const minutes = Math.round(route.duration / 60);
+
+        document.getElementById("distance").textContent =
+          km.toFixed(2) + " km";
+
+        document.getElementById("duration").textContent =
+          minutes >= 60
+            ? Math.floor(minutes / 60) + " hr " +
+              (minutes % 60) + " min"
+            : minutes + " min";
+
+        document.getElementById("googleBtn").disabled = false;
+
+        setStatus(
+          "Route found! The blue line shows the suggested driving route."
+        );
+      } catch (error) {
+        setStatus(error.message || "Something went wrong.");
+      } finally {
+        routeButton.disabled = false;
+        routeButton.textContent = "Find route";
+      }
+    }
+
+    // 7. Use the browser's location permission.
+    function useMyLocation() {
+      if (!navigator.geolocation) {
+        setStatus("Your browser does not support location services.");
+        return;
+      }
+
+      setStatus("Requesting your location...");
+
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          startCoords = { lat, lon };
+          document.getElementById("start").value =
+            lat.toFixed(6) + ", " + lon.toFixed(6);
+
+          map.setView([lat, lon], 15);
+
+          if (startMarker) map.removeLayer(startMarker);
+
+          startMarker = L.marker([lat, lon])
+            .addTo(map)
+            .bindPopup("Your current location")
+            .openPopup();
+
+          setStatus(
+            "Location added as your starting point. Enter a destination " +
+            "and click Find route."
+          );
+        },
+        error => {
+          const messages = {
+            1: "Location permission was denied. Allow location access in your browser.",
+            2: "Your location is currently unavailable.",
+            3: "The location request timed out."
+          };
+
+          setStatus(messages[error.code] || "Could not get your location.");
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        }
+      );
+    }
+
+    // 8. Open the calculated journey in Google Maps.
+    function openGoogleMaps() {
+      if (!startCoords || !destinationCoords) return;
+
+      const url =
+        "https://www.google.com/maps/dir/?api=1" +
+        "&origin=" + encodeURIComponent(
+          startCoords.lat + "," + startCoords.lon
+        ) +
+        "&destination=" + encodeURIComponent(
+          destinationCoords.lat + "," + destinationCoords.lon
+        ) +
+        "&travelmode=driving";
+
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    // 9. Remove the current route and markers.
+    function clearRoute() {
+      if (startMarker) map.removeLayer(startMarker);
+      if (destinationMarker) map.removeLayer(destinationMarker);
+      if (routeLine) map.removeLayer(routeLine);
+
+      startMarker = null;
+      destinationMarker = null;
+      routeLine = null;
+      startCoords = null;
+      destinationCoords = null;
+
+      document.getElementById("start").value = "";
+      document.getElementById("destination").value = "";
+
+      resetResults();
+      setStatus("Map cleared. Enter a new journey to begin.");
+      map.setView([3.139, 101.6869], 12);
+    }
+  </script>
+</body>
+</html>
